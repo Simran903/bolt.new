@@ -55,6 +55,10 @@ export function completedSteps(steps: Step[]): Step[] {
   return steps.map((s) => ({ ...s, status: "completed" as const }));
 }
 
+export function parseCompletedSteps(response: string): Step[] {
+  return completedSteps(parseXml(response));
+}
+
 export function appendSteps(existing: Step[], incoming: Step[]): Step[] {
   const nextId = existing.length
     ? Math.max(...existing.map((s) => s.id)) + 1
@@ -65,43 +69,39 @@ export function appendSteps(existing: Step[], incoming: Step[]): Step[] {
   ];
 }
 
-export function findFirstFile(files: FileItem[]): FileItem | null {
+function walkFiles(
+  files: FileItem[],
+  visit: (item: FileItem) => boolean | void,
+): FileItem | null {
   for (const item of files) {
-    if (item.type === "file") return item;
+    if (visit(item)) return item;
     if (item.children?.length) {
-      const nested = findFirstFile(item.children);
+      const nested = walkFiles(item.children, visit);
       if (nested) return nested;
     }
   }
   return null;
+}
+
+export function findFirstFile(files: FileItem[]): FileItem | null {
+  return walkFiles(files, (item) => item.type === "file");
 }
 
 export function findFileByPath(
   files: FileItem[],
   path: string,
 ): FileItem | null {
-  for (const item of files) {
-    if (item.type === "file" && item.path === path) return item;
-    if (item.children?.length) {
-      const nested = findFileByPath(item.children, path);
-      if (nested) return nested;
-    }
-  }
-  return null;
+  return walkFiles(files, (item) => item.type === "file" && item.path === path);
 }
 
 export function filesSignature(files: FileItem[]): string {
   const parts: string[] = [];
-  function walk(items: FileItem[]) {
-    for (const item of items) {
-      if (item.type === "file") {
-        parts.push(`${item.path}:${item.content?.length ?? 0}`);
-      } else if (item.children) {
-        walk(item.children);
-      }
+  walkFiles(files, (item) => {
+    if (item.type === "file") {
+      parts.push(`${item.path}:${item.content?.length ?? 0}`);
     }
-  }
-  walk(files);
+    return false;
+  });
   return parts.sort().join("|");
 }
 

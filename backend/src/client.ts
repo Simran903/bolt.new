@@ -32,15 +32,22 @@ const agentOptions = {
 
 export type ChatMessage = { role: "user" | "assistant"; content: string };
 
+function joinSections(...parts: string[]): string {
+  return parts.join("\n\n---\n\n");
+}
+
 function formatConversation(messages: ChatMessage[]): string {
   return messages
     .map((m) => `${m.role === "user" ? "User" : "Assistant"}: ${m.content}`)
     .join("\n\n");
 }
 
-async function runAgent(message: string): Promise<string> {
+async function runAgent(message: string, options?: { artifact?: boolean }): Promise<string> {
+  const input = options?.artifact
+    ? joinSections(TEXT_ONLY_DIRECTIVE, message)
+    : message;
   try {
-    const result = await Agent.prompt(message, agentOptions);
+    const result = await Agent.prompt(input, agentOptions);
 
     if (result.status === "error") {
       throw new Error(`Cursor agent run failed: ${result.id}`);
@@ -55,31 +62,13 @@ async function runAgent(message: string): Promise<string> {
   }
 }
 
-/** Short, non-artifact replies (e.g. template classification). */
-export async function promptPlain(message: string): Promise<string> {
-  return runAgent(message);
-}
-
-/** Code-generation replies that must stay in WebContainer artifact XML. */
-export async function promptForArtifact(message: string): Promise<string> {
-  return runAgent(`${TEXT_ONLY_DIRECTIVE}\n\n---\n\n${message}`);
-}
-
-export async function promptWithSystem(
-  system: string,
-  userMessage: string,
-  options?: { artifact?: boolean },
-): Promise<string> {
-  const message = `${system}\n\n---\n\n${userMessage}`;
-  return options?.artifact ? promptForArtifact(message) : promptPlain(message);
-}
-
 export async function chatWithSystem(
   system: string,
   messages: ChatMessage[],
 ): Promise<string> {
   const conversation = formatConversation(messages);
-  return promptForArtifact(
-    `${system}\n\n---\n\nConversation:\n\n${conversation}`,
+  return runAgent(
+    joinSections(system, `Conversation:\n\n${conversation}`),
+    { artifact: true },
   );
 }

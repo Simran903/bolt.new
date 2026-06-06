@@ -46,6 +46,35 @@ async function runInstall(
   return { code, output };
 }
 
+async function mountProject(container: WebContainer, files: FileItem[]) {
+  await container.mount(convertToWebContainerTree(withDefaultPackageLock(files)));
+}
+
+async function clearNodeModules(container: WebContainer) {
+  try {
+    await container.fs.rm("node_modules", {
+      recursive: true,
+      force: true,
+    });
+  } catch {
+    // node_modules may not exist yet.
+  }
+}
+
+async function runInstallWithRetry(
+  container: WebContainer,
+): Promise<{ code: number; output: string }> {
+  let result = await runInstall(container, false);
+  if (result.code !== 0) {
+    result = await runInstall(container, true);
+  }
+  return result;
+}
+
+async function startDevServer(container: WebContainer): Promise<WebContainerProcess> {
+  return container.spawn("npm", ["run", "dev"]);
+}
+
 export function useProjectRunner(
   webcontainer: WebContainer | undefined,
   files: FileItem[],
@@ -56,11 +85,16 @@ export function useProjectRunner(
   const [previewError, setPreviewError] = useState<string | null>(null);
   const signature = filesSignature(files);
   const lastSuccessfulSignature = useRef("");
+  const latestFilesRef = useRef(files);
+
+  useEffect(() => {
+    latestFilesRef.current = files;
+  }, [files]);
 
   useEffect(() => {
     if (!webcontainer || !signature || !enabled) return;
     if (signature === lastSuccessfulSignature.current) return;
-    if (!findFileByPath(files, "/package.json")) return;
+    if (!findFileByPath(latestFilesRef.current, "/package.json")) return;
 
     const container = webcontainer;
     let cancelled = false;
@@ -77,29 +111,16 @@ export function useProjectRunner(
     container.on("server-ready", onServerReady);
 
     const timer = window.setTimeout(() => {
+      const latestFiles = latestFilesRef.current;
       setPreviewLoading(true);
       setPreviewError(null);
       setPreviewUrl("");
 
       async function run() {
         try {
-          await container.mount(
-            convertToWebContainerTree(withDefaultPackageLock(files)),
-          );
-
-          try {
-            await container.fs.rm("node_modules", {
-              recursive: true,
-              force: true,
-            });
-          } catch {
-            // node_modules may not exist yet.
-          }
-
-          let { code, output } = await runInstall(container, false);
-          if (code !== 0) {
-            ({ code, output } = await runInstall(container, true));
-          }
+          await mountProject(container, latestFiles);
+          await clearNodeModules(container);
+          const { code, output } = await runInstallWithRetry(container);
 
           if (cancelled) return;
 
@@ -114,7 +135,7 @@ export function useProjectRunner(
             return;
           }
 
-          devProcess = await container.spawn("npm", ["run", "dev"]);
+          devProcess = await startDevServer(container);
         } catch (err) {
           if (!cancelled) {
             setPreviewError(
@@ -133,7 +154,7 @@ export function useProjectRunner(
       window.clearTimeout(timer);
       devProcess?.kill();
     };
-  }, [webcontainer, signature, enabled, files]);
+  }, [webcontainer, signature, enabled]);
 
   return { previewUrl, previewLoading, previewError };
 }

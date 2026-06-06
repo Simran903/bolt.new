@@ -6,13 +6,21 @@ import type { FileItem } from "@/lib/types";
 
 const Editor = dynamic(() => import("@monaco-editor/react"), { ssr: false });
 
+const LANGUAGE_BY_EXTENSION: Record<string, string> = {
+  ".tsx": "typescript",
+  ".jsx": "typescript",
+  ".ts": "typescript",
+  ".css": "css",
+  ".html": "html",
+  ".json": "json",
+  ".js": "javascript",
+};
+
 function languageForPath(path: string): string {
-  if (path.endsWith(".tsx") || path.endsWith(".jsx")) return "typescript";
-  if (path.endsWith(".ts")) return "typescript";
-  if (path.endsWith(".css")) return "css";
-  if (path.endsWith(".html")) return "html";
-  if (path.endsWith(".json")) return "json";
-  if (path.endsWith(".js")) return "javascript";
+  const match = path.match(/\.[^./]+$/);
+  if (match) {
+    return LANGUAGE_BY_EXTENSION[match[0]] ?? "plaintext";
+  }
   return "plaintext";
 }
 

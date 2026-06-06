@@ -16,20 +16,24 @@ import { StepsList } from "@/components/StepsList";
 import { FileExplorer } from "@/components/FileExplorer";
 import { CodeEditor } from "@/components/CodeEditor";
 import { Loader } from "@/components/Loader";
-import { chat, getTemplate } from "@/lib/api";
+import { API_UNREACHABLE_MESSAGE, chat, getTemplate } from "@/lib/api";
 import {
   appendSteps,
   buildFilesFromSteps,
-  completedSteps,
   findFileByPath,
   findFirstFile,
-  parseXml,
+  parseCompletedSteps,
 } from "@/lib/parse";
 import type { ChatMessage, Step } from "@/lib/types";
 import { useWebContainer } from "@/hooks/useWebContainer";
 import { useProjectRunner } from "@/hooks/useProjectRunner";
 
 type Tab = "code" | "preview";
+type LoadPhase = "initial" | "applying" | "ready" | "idle";
+
+function appendReplySteps(existing: Step[], reply: string): Step[] {
+  return appendSteps(existing, parseCompletedSteps(reply));
+}
 
 export function BuilderPage() {
   const router = useRouter();
@@ -75,20 +79,20 @@ export function BuilderPage() {
       setError(null);
       try {
         const { prompts, uiPrompts } = await getTemplate(prompt);
-        setSteps(completedSteps(parseXml(uiPrompts[0])));
+        setSteps(parseCompletedSteps(uiPrompts[0]));
 
         const userMessages: ChatMessage[] = [...prompts, prompt].map(
           (content) => ({ role: "user", content }),
         );
         const reply = await chat(userMessages);
-        setSteps((s) => appendSteps(s, completedSteps(parseXml(reply))));
+        setSteps((s) => appendReplySteps(s, reply));
         setMessages([...userMessages, { role: "assistant", content: reply }]);
         setReady(true);
       } catch (err) {
         setError(
           err instanceof Error
             ? err.message
-            : "Could not reach the API. Start the backend with: cd backend && npm run dev",
+            : API_UNREACHABLE_MESSAGE,
         );
       } finally {
         setLoading(false);
@@ -110,7 +114,9 @@ export function BuilderPage() {
         newMessage,
         { role: "assistant", content: reply },
       ]);
-      setSteps((s) => appendSteps(s, completedSteps(parseXml(reply))));
+      setSteps((s) => appendReplySteps(s, reply));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : API_UNREACHABLE_MESSAGE);
     } finally {
       setPendingPrompt(null);
       setLoading(false);
@@ -119,8 +125,15 @@ export function BuilderPage() {
 
   if (!prompt) return null;
 
-  const isInitialLoad = loading && !ready;
-  const isApplyingChanges = loading && ready;
+  const loadPhase: LoadPhase = loading
+    ? ready
+      ? "applying"
+      : "initial"
+    : ready
+      ? "ready"
+      : "idle";
+  const isInitialLoad = loadPhase === "initial";
+  const isApplyingChanges = loadPhase === "applying";
   const showChat = ready;
 
   return (
@@ -138,19 +151,19 @@ export function BuilderPage() {
           <Wand2 className="w-4 h-4 text-violet-400 shrink-0" />
           <span className="text-sm font-medium truncate">{prompt}</span>
         </div>
-        {isInitialLoad && (
+        {loadPhase === "initial" && (
           <div className="ml-auto flex items-center gap-2 text-xs text-violet-400">
             <Loader2 className="w-3.5 h-3.5 animate-spin" />
             Generating…
           </div>
         )}
-        {isApplyingChanges && (
+        {loadPhase === "applying" && (
           <div className="ml-auto flex items-center gap-2 text-xs text-violet-400">
             <Loader2 className="w-3.5 h-3.5 animate-spin" />
             Applying changes…
           </div>
         )}
-        {ready && !loading && (
+        {loadPhase === "ready" && (
           <div className="ml-auto flex items-center gap-1.5 text-xs text-emerald-500/80">
             <Sparkles className="w-3.5 h-3.5" />
             Ready
