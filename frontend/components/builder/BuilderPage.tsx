@@ -6,6 +6,7 @@ import Link from "next/link";
 import {
   ArrowLeft,
   Code2,
+  Download,
   Eye,
   Loader2,
   Send,
@@ -24,7 +25,7 @@ import {
   findFirstFile,
   parseCompletedSteps,
 } from "@/lib/parse";
-import type { ChatMessage, Step } from "@/lib/types";
+import type { ChatMessage, FileItem, Step } from "@/lib/types";
 import { useWebContainer } from "@/hooks/useWebContainer";
 import { useProjectRunner } from "@/hooks/useProjectRunner";
 
@@ -33,6 +34,36 @@ type LoadPhase = "initial" | "applying" | "ready" | "idle";
 
 function appendReplySteps(existing: Step[], reply: string): Step[] {
   return appendSteps(existing, parseCompletedSteps(reply));
+}
+
+function toProjectFilename(prompt: string): string {
+  const base = prompt
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 48);
+  return `${base || "project"}.zip`;
+}
+
+type ZipFolder = {
+  file: (name: string, data: string) => void;
+  folder: (name: string) => ZipFolder | null;
+};
+
+function addFilesToZip(
+  zipFolder: ZipFolder,
+  entries: FileItem[],
+) {
+  for (const entry of entries) {
+    if (entry.type === "file") {
+      zipFolder.file(entry.name, entry.content ?? "");
+      continue;
+    }
+
+    const childFolder = zipFolder.folder(entry.name);
+    if (!childFolder) continue;
+    addFilesToZip(childFolder, entry.children ?? []);
+  }
 }
 
 export function BuilderPage() {
@@ -50,6 +81,7 @@ export function BuilderPage() {
   const [tab, setTab] = useState<Tab>("code");
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [pendingPrompt, setPendingPrompt] = useState<string | null>(null);
+  const [downloading, setDownloading] = useState(false);
 
   const files = useMemo(() => buildFilesFromSteps(steps), [steps]);
 
@@ -127,6 +159,33 @@ export function BuilderPage() {
     }
   }
 
+  async function handleDownloadProject() {
+    if (downloading || files.length === 0) return;
+    setDownloading(true);
+    try {
+      const { default: JSZip } = await import("jszip");
+      const zip = new JSZip();
+      const projectRoot = zip.folder("project");
+      if (!projectRoot) {
+        throw new Error("Failed to initialize zip archive");
+      }
+      addFilesToZip(projectRoot as ZipFolder, files);
+      const blob = await zip.generateAsync({ type: "blob" });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = toProjectFilename(prompt);
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to download project");
+    } finally {
+      setDownloading(false);
+    }
+  }
+
   if (!prompt) return null;
 
   const loadPhase: LoadPhase = loading
@@ -168,9 +227,23 @@ export function BuilderPage() {
           </div>
         )}
         {loadPhase === "ready" && (
-          <div className="ml-auto flex items-center gap-1.5 text-xs text-emerald-500/80">
-            <Sparkles className="w-3.5 h-3.5" />
-            Ready
+          <div className="ml-auto flex items-center gap-3">
+            <div className="flex items-center gap-1.5 text-xs text-emerald-500/80">
+              <Sparkles className="w-3.5 h-3.5" />
+              Ready
+            </div>
+            <button
+              onClick={handleDownloadProject}
+              disabled={downloading || files.length === 0}
+              className="inline-flex items-center gap-1.5 rounded-md border border-zinc-700 bg-zinc-900 px-2.5 py-1.5 text-xs text-zinc-300 hover:text-zinc-100 hover:border-zinc-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              {downloading ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <Download className="w-3.5 h-3.5" />
+              )}
+              Download code
+            </button>
           </div>
         )}
       </header>
