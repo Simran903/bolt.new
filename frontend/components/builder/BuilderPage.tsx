@@ -60,12 +60,16 @@ export function BuilderPage() {
     }
     return findFirstFile(files);
   }, [files, selectedPath]);
-
   const { previewUrl, previewLoading, previewError } = useProjectRunner(
     webcontainer,
     files,
     !loading,
   );
+  const externalPreviewHref = useMemo(() => {
+    if (!previewUrl) return "";
+    const params = new URLSearchParams({ url: previewUrl });
+    return `/preview?${params.toString()}`;
+  }, [previewUrl]);
 
   useEffect(() => {
     if (!prompt) router.replace("/");
@@ -280,9 +284,9 @@ export function BuilderPage() {
                 </button>
               ))}
             </div>
-            {tab === "preview" && previewUrl && (
+            {tab === "preview" && externalPreviewHref && (
               <a
-                href={previewUrl}
+                href={externalPreviewHref}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-xs text-zinc-500 hover:text-violet-400 transition-colors"
