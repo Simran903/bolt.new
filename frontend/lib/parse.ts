@@ -76,6 +76,20 @@ export function findFirstFile(files: FileItem[]): FileItem | null {
   return null;
 }
 
+export function findFileByPath(
+  files: FileItem[],
+  path: string,
+): FileItem | null {
+  for (const item of files) {
+    if (item.type === "file" && item.path === path) return item;
+    if (item.children?.length) {
+      const nested = findFileByPath(item.children, path);
+      if (nested) return nested;
+    }
+  }
+  return null;
+}
+
 export function filesSignature(files: FileItem[]): string {
   const parts: string[] = [];
   function walk(items: FileItem[]) {
@@ -96,6 +110,15 @@ export function buildFilesFromSteps(steps: Step[]): FileItem[] {
     if (step.type !== StepType.CreateFile || !step.path) return tree;
     return addFile(tree, step.path, step.code ?? "");
   }, []);
+}
+
+export function ensureFile(
+  tree: FileItem[],
+  filePath: string,
+  content: string,
+): FileItem[] {
+  if (findFileByPath(tree, filePath)) return tree;
+  return addFile(tree, filePath, content);
 }
 
 function addFile(tree: FileItem[], filePath: string, content: string): FileItem[] {

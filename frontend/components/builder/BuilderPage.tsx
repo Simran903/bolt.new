@@ -21,10 +21,11 @@ import {
   appendSteps,
   buildFilesFromSteps,
   completedSteps,
+  findFileByPath,
   findFirstFile,
   parseXml,
 } from "@/lib/parse";
-import type { ChatMessage, FileItem, Step } from "@/lib/types";
+import type { ChatMessage, Step } from "@/lib/types";
 import { useWebContainer } from "@/hooks/useWebContainer";
 import { useProjectRunner } from "@/hooks/useProjectRunner";
 
@@ -43,24 +44,28 @@ export function BuilderPage() {
   const [error, setError] = useState<string | null>(null);
   const [currentStep, setCurrentStep] = useState(1);
   const [tab, setTab] = useState<Tab>("code");
-  const [selectedFile, setSelectedFile] = useState<FileItem | null>(null);
+  const [selectedPath, setSelectedPath] = useState<string | null>(null);
+  const [pendingPrompt, setPendingPrompt] = useState<string | null>(null);
 
   const files = useMemo(() => buildFilesFromSteps(steps), [steps]);
+
+  const activeFile = useMemo(() => {
+    if (selectedPath) {
+      const match = findFileByPath(files, selectedPath);
+      if (match) return match;
+    }
+    return findFirstFile(files);
+  }, [files, selectedPath]);
 
   const { previewUrl, previewLoading, previewError } = useProjectRunner(
     webcontainer,
     files,
+    !loading,
   );
 
   useEffect(() => {
     if (!prompt) router.replace("/");
   }, [prompt, router]);
-
-  useEffect(() => {
-    if (selectedFile) return;
-    const first = findFirstFile(files);
-    if (first) setSelectedFile(first);
-  }, [files, selectedFile]);
 
   useEffect(() => {
     if (!prompt) return;
@@ -79,9 +84,11 @@ export function BuilderPage() {
         setSteps((s) => appendSteps(s, completedSteps(parseXml(reply))));
         setMessages([...userMessages, { role: "assistant", content: reply }]);
         setReady(true);
-      } catch {
+      } catch (err) {
         setError(
-          "Could not reach the API. Start the backend with: cd backend && npm run dev",
+          err instanceof Error
+            ? err.message
+            : "Could not reach the API. Start the backend with: cd backend && npm run dev",
         );
       } finally {
         setLoading(false);
@@ -93,6 +100,8 @@ export function BuilderPage() {
     if (!userPrompt.trim() || loading) return;
 
     const newMessage: ChatMessage = { role: "user", content: userPrompt };
+    setPendingPrompt(userPrompt.trim());
+    setUserPrompt("");
     setLoading(true);
     try {
       const reply = await chat([...messages, newMessage]);
@@ -102,16 +111,17 @@ export function BuilderPage() {
         { role: "assistant", content: reply },
       ]);
       setSteps((s) => appendSteps(s, completedSteps(parseXml(reply))));
-      setUserPrompt("");
     } finally {
+      setPendingPrompt(null);
       setLoading(false);
     }
   }
 
   if (!prompt) return null;
 
-  const showChat = ready && !loading;
   const isInitialLoad = loading && !ready;
+  const isApplyingChanges = loading && ready;
+  const showChat = ready;
 
   return (
     <div className="h-screen flex flex-col bg-zinc-950 text-zinc-100 overflow-hidden">
@@ -134,6 +144,12 @@ export function BuilderPage() {
             Generating…
           </div>
         )}
+        {isApplyingChanges && (
+          <div className="ml-auto flex items-center gap-2 text-xs text-violet-400">
+            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            Applying changes…
+          </div>
+        )}
         {ready && !loading && (
           <div className="ml-auto flex items-center gap-1.5 text-xs text-emerald-500/80">
             <Sparkles className="w-3.5 h-3.5" />
@@ -150,6 +166,12 @@ export function BuilderPage() {
               steps={steps}
               currentStep={currentStep}
               onStepClick={setCurrentStep}
+              processing={isApplyingChanges}
+              processingLabel={
+                pendingPrompt
+                  ? `Working on: "${pendingPrompt}"`
+                  : "Applying your changes…"
+              }
             />
           </div>
 
@@ -164,6 +186,15 @@ export function BuilderPage() {
             )}
             {showChat && (
               <div className="space-y-2">
+                {isApplyingChanges && pendingPrompt && (
+                  <div className="flex items-start gap-2 rounded-lg border border-violet-500/20 bg-violet-500/5 px-3 py-2">
+                    <Loader2 className="w-4 h-4 text-violet-400 animate-spin shrink-0 mt-0.5" />
+                    <p className="text-sm text-zinc-300 leading-relaxed">
+                      <span className="text-zinc-500">You asked: </span>
+                      &ldquo;{pendingPrompt}&rdquo;
+                    </p>
+                  </div>
+                )}
                 <textarea
                   value={userPrompt}
                   onChange={(e) => setUserPrompt(e.target.value)}
@@ -175,19 +206,25 @@ export function BuilderPage() {
                   }}
                   placeholder="Ask for changes…"
                   rows={3}
-                  className="w-full p-3 text-sm bg-zinc-950/50 text-zinc-100 border border-zinc-800 rounded-lg focus:ring-2 focus:ring-violet-500/40 focus:border-violet-500/40 resize-none placeholder-zinc-600 outline-none transition-all"
+                  disabled={loading}
+                  className="w-full p-3 text-sm bg-zinc-950/50 text-zinc-100 border border-zinc-800 rounded-lg focus:ring-2 focus:ring-violet-500/40 focus:border-violet-500/40 resize-none placeholder-zinc-600 outline-none transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                 />
                 <button
                   onClick={handleSend}
                   disabled={!userPrompt.trim() || loading}
                   className="w-full flex items-center justify-center gap-2 bg-violet-600 text-white py-2.5 px-4 rounded-lg text-sm font-medium hover:bg-violet-500 disabled:opacity-40 disabled:cursor-not-allowed transition-all active:scale-[0.98]"
                 >
-                  {loading ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
+                  {isApplyingChanges ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Applying…
+                    </>
                   ) : (
-                    <Send className="w-4 h-4" />
+                    <>
+                      <Send className="w-4 h-4" />
+                      Send
+                    </>
                   )}
-                  Send
                 </button>
               </div>
             )}
@@ -198,8 +235,8 @@ export function BuilderPage() {
         <div className="col-span-2 min-h-0">
           <FileExplorer
             files={files}
-            selectedPath={selectedFile?.path}
-            onFileSelect={setSelectedFile}
+            selectedPath={activeFile?.path}
+            onFileSelect={(file) => setSelectedPath(file.path)}
           />
         </div>
 
@@ -243,13 +280,14 @@ export function BuilderPage() {
           </div>
 
           <div className="flex-1 min-h-0 p-3">
-            {tab === "code" && <CodeEditor file={selectedFile} />}
+            {tab === "code" && <CodeEditor file={activeFile} />}
             {tab === "preview" && previewUrl && (
               <div className="h-full rounded-lg border border-zinc-800 overflow-hidden bg-zinc-950">
                 <iframe
                   src={previewUrl}
                   className="w-full h-full border-0"
                   title="Preview"
+                  allow="cross-origin-isolated"
                   style={{ colorScheme: "dark" }}
                 />
               </div>
@@ -267,7 +305,7 @@ export function BuilderPage() {
                 ) : (
                   <>
                     <Eye className="w-10 h-10 opacity-30" />
-                    <p className="text-sm">
+                    <p className="text-sm whitespace-pre-wrap max-w-md text-center">
                       {previewError ??
                         "Preview will appear once the dev server is ready"}
                     </p>

@@ -30,12 +30,17 @@ export function StepsList({
   steps,
   currentStep,
   onStepClick,
+  processing = false,
+  processingLabel = "Applying your changes…",
 }: {
   steps: Step[];
   currentStep: number;
   onStepClick: (id: number) => void;
+  processing?: boolean;
+  processingLabel?: string;
 }) {
   const completed = steps.filter((s) => s.status === "completed").length;
+  const total = steps.length + (processing ? 1 : 0);
 
   return (
     <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 h-full flex flex-col overflow-hidden">
@@ -43,16 +48,14 @@ export function StepsList({
         <div className="flex items-center justify-between mb-2">
           <h2 className="text-sm font-semibold text-zinc-100">Build Steps</h2>
           <span className="text-xs text-zinc-500 tabular-nums">
-            {completed}/{steps.length}
+            {completed}/{total}
           </span>
         </div>
         <div className="h-1 rounded-full bg-zinc-800 overflow-hidden">
           <div
             className="h-full bg-violet-500 rounded-full transition-all duration-500"
             style={{
-              width: steps.length
-                ? `${(completed / steps.length) * 100}%`
-                : "0%",
+              width: total ? `${(completed / total) * 100}%` : "0%",
             }}
           />
         </div>
@@ -93,6 +96,14 @@ export function StepsList({
               </div>
             );
           })
+        )}
+        {processing && (
+          <div className="flex items-start gap-2.5 px-3 py-2.5 rounded-lg bg-violet-500/10 border border-violet-500/20">
+            <StepStatus status="in-progress" />
+            <div className="min-w-0 flex-1">
+              <p className="text-sm text-violet-200">{processingLabel}</p>
+            </div>
+          </div>
         )}
       </div>
     </div>
