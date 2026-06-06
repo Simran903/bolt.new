@@ -1,52 +1,72 @@
-// hooks/useProjectRunner.ts
-
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { WebContainer } from "@webcontainer/api";
 import { convertToWebContainerTree } from "@/lib/webcontainer";
 import type { FileItem } from "@/lib/types";
+import { filesSignature } from "@/lib/parse";
 
 export function useProjectRunner(
   webcontainer: WebContainer | undefined,
   files: FileItem[],
 ) {
   const [previewUrl, setPreviewUrl] = useState("");
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const signature = filesSignature(files);
+  const lastSignature = useRef("");
 
   useEffect(() => {
-    if (!webcontainer || files.length === 0) return;
+    if (!webcontainer || !signature) return;
+    if (signature === lastSignature.current) return;
+
+    lastSignature.current = signature;
     const container = webcontainer;
+    let cancelled = false;
+
+    setPreviewLoading(true);
+    setPreviewError(null);
+    setPreviewUrl("");
+
+    const onServerReady = (_port: number, url: string) => {
+      if (!cancelled) {
+        setPreviewUrl(url);
+        setPreviewLoading(false);
+      }
+    };
+
+    container.on("server-ready", onServerReady);
 
     async function run() {
-      const mountTree = convertToWebContainerTree(files);
+      try {
+        await container.mount(convertToWebContainerTree(files));
 
-      // Mount files
-      await container.mount(mountTree);
+        const installProcess = await container.spawn("npm", ["install"]);
+        const installExitCode = await installProcess.exit;
 
-      // Install dependencies
-      const installProcess = await container.spawn(
-        "npm",
-        ["install"]
-      );
+        if (cancelled) return;
 
-      const installExitCode = await installProcess.exit;
+        if (installExitCode !== 0) {
+          setPreviewError("npm install failed in WebContainer");
+          setPreviewLoading(false);
+          return;
+        }
 
-      if (installExitCode !== 0) {
-        console.error("npm install failed");
-        return;
+        await container.spawn("npm", ["run", "dev"]);
+      } catch (err) {
+        if (!cancelled) {
+          setPreviewError(
+            err instanceof Error ? err.message : "Failed to start preview",
+          );
+          setPreviewLoading(false);
+        }
       }
-
-      // Start dev server
-      await container.spawn(
-        "npm",
-        ["run", "dev"]
-      );
     }
 
-    container.on("server-ready", (port, url) => {
-      setPreviewUrl(url);
-    });
-
     run();
-  }, [webcontainer, files]);
 
-  return { previewUrl };
+    return () => {
+      cancelled = true;
+    };
+  }, [webcontainer, signature, files]);
+
+  return { previewUrl, previewLoading, previewError };
 }

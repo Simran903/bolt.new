@@ -4,7 +4,7 @@ const backendUrl = process.env.BACKEND_URL ?? "http://localhost:5000";
 
 const nextConfig: NextConfig = {
   experimental: {
-    // /chat calls Claude with large prompts and can exceed the default 30s proxy limit
+    // /chat calls the Cursor agent with large prompts and can exceed the default 30s proxy limit
     proxyTimeout: 120_000,
   },
   async headers() {

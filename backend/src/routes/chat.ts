@@ -1,21 +1,19 @@
 import { Router } from "express";
-import { TextBlock } from "@anthropic-ai/sdk/resources";
+import { chatWithSystem } from "../client";
 import { getSystemPrompt } from "../prompt";
-import { client } from "../client";
 
 const router = Router();
 
 router.post("/", async (req, res) => {
-  const messages = req.body.messages;
-  const response = await client.messages.create({
-    model: "claude-opus-4-8",
-    max_tokens: 5000,
-    system: getSystemPrompt(),
-    messages: messages,
-  });
-
-  const text = (response.content[0] as TextBlock).text;
-  return res.json({ response: text });
+  try {
+    const messages = req.body.messages;
+    const text = await chatWithSystem(getSystemPrompt(), messages);
+    return res.json({ response: text });
+  } catch (err) {
+    const message =
+      err instanceof Error ? err.message : "Failed to generate response";
+    return res.status(500).json({ error: message });
+  }
 });
 
 export default router;

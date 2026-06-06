@@ -55,6 +55,42 @@ export function completedSteps(steps: Step[]): Step[] {
   return steps.map((s) => ({ ...s, status: "completed" as const }));
 }
 
+export function appendSteps(existing: Step[], incoming: Step[]): Step[] {
+  const nextId = existing.length
+    ? Math.max(...existing.map((s) => s.id)) + 1
+    : 1;
+  return [
+    ...existing,
+    ...incoming.map((step, index) => ({ ...step, id: nextId + index })),
+  ];
+}
+
+export function findFirstFile(files: FileItem[]): FileItem | null {
+  for (const item of files) {
+    if (item.type === "file") return item;
+    if (item.children?.length) {
+      const nested = findFirstFile(item.children);
+      if (nested) return nested;
+    }
+  }
+  return null;
+}
+
+export function filesSignature(files: FileItem[]): string {
+  const parts: string[] = [];
+  function walk(items: FileItem[]) {
+    for (const item of items) {
+      if (item.type === "file") {
+        parts.push(`${item.path}:${item.content?.length ?? 0}`);
+      } else if (item.children) {
+        walk(item.children);
+      }
+    }
+  }
+  walk(files);
+  return parts.sort().join("|");
+}
+
 export function buildFilesFromSteps(steps: Step[]): FileItem[] {
   return steps.reduce<FileItem[]>((tree, step) => {
     if (step.type !== StepType.CreateFile || !step.path) return tree;

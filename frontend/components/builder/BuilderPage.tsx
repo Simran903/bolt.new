@@ -2,20 +2,33 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Code2, Eye } from "lucide-react";
+import Link from "next/link";
+import {
+  ArrowLeft,
+  Code2,
+  Eye,
+  Loader2,
+  Send,
+  Sparkles,
+  Wand2,
+} from "lucide-react";
 import { StepsList } from "@/components/StepsList";
 import { FileExplorer } from "@/components/FileExplorer";
 import { CodeEditor } from "@/components/CodeEditor";
 import { Loader } from "@/components/Loader";
 import { chat, getTemplate } from "@/lib/api";
-import { buildFilesFromSteps, completedSteps, parseXml } from "@/lib/parse";
+import {
+  appendSteps,
+  buildFilesFromSteps,
+  completedSteps,
+  findFirstFile,
+  parseXml,
+} from "@/lib/parse";
 import type { ChatMessage, FileItem, Step } from "@/lib/types";
 import { useWebContainer } from "@/hooks/useWebContainer";
 import { useProjectRunner } from "@/hooks/useProjectRunner";
 
 type Tab = "code" | "preview";
-
-const panelClass = "bg-gray-900 rounded-lg shadow-lg p-4 h-full overflow-auto";
 
 export function BuilderPage() {
   const router = useRouter();
@@ -34,11 +47,20 @@ export function BuilderPage() {
 
   const files = useMemo(() => buildFilesFromSteps(steps), [steps]);
 
-  const { previewUrl } = useProjectRunner(webcontainer, files);
+  const { previewUrl, previewLoading, previewError } = useProjectRunner(
+    webcontainer,
+    files,
+  );
 
   useEffect(() => {
     if (!prompt) router.replace("/");
   }, [prompt, router]);
+
+  useEffect(() => {
+    if (selectedFile) return;
+    const first = findFirstFile(files);
+    if (first) setSelectedFile(first);
+  }, [files, selectedFile]);
 
   useEffect(() => {
     if (!prompt) return;
@@ -54,7 +76,7 @@ export function BuilderPage() {
           (content) => ({ role: "user", content }),
         );
         const reply = await chat(userMessages);
-        setSteps((s) => [...s, ...completedSteps(parseXml(reply))]);
+        setSteps((s) => appendSteps(s, completedSteps(parseXml(reply))));
         setMessages([...userMessages, { role: "assistant", content: reply }]);
         setReady(true);
       } catch {
@@ -68,7 +90,7 @@ export function BuilderPage() {
   }, [prompt]);
 
   async function handleSend() {
-    if (!userPrompt.trim()) return;
+    if (!userPrompt.trim() || loading) return;
 
     const newMessage: ChatMessage = { role: "user", content: userPrompt };
     setLoading(true);
@@ -79,7 +101,7 @@ export function BuilderPage() {
         newMessage,
         { role: "assistant", content: reply },
       ]);
-      setSteps((s) => [...s, ...completedSteps(parseXml(reply))]);
+      setSteps((s) => appendSteps(s, completedSteps(parseXml(reply))));
       setUserPrompt("");
     } finally {
       setLoading(false);
@@ -89,54 +111,102 @@ export function BuilderPage() {
   if (!prompt) return null;
 
   const showChat = ready && !loading;
+  const isInitialLoad = loading && !ready;
 
   return (
-    <div className="min-h-screen bg-gray-900 flex flex-col">
-      <header className="bg-gray-800 border-b border-gray-700 px-6 py-4">
-        <h1 className="text-xl font-semibold text-gray-100">Website Builder</h1>
-        <p className="text-sm text-gray-400 mt-1">Prompt: {prompt}</p>
+    <div className="h-screen flex flex-col bg-zinc-950 text-zinc-100 overflow-hidden">
+      <header className="shrink-0 flex items-center gap-4 px-4 h-14 border-b border-zinc-800 bg-zinc-900/80 backdrop-blur-sm">
+        <Link
+          href="/"
+          className="flex items-center gap-1.5 text-sm text-zinc-500 hover:text-zinc-300 transition-colors"
+        >
+          <ArrowLeft className="w-4 h-4" />
+          Back
+        </Link>
+        <div className="w-px h-5 bg-zinc-800" />
+        <div className="flex items-center gap-2 min-w-0">
+          <Wand2 className="w-4 h-4 text-violet-400 shrink-0" />
+          <span className="text-sm font-medium truncate">{prompt}</span>
+        </div>
+        {isInitialLoad && (
+          <div className="ml-auto flex items-center gap-2 text-xs text-violet-400">
+            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            Generating…
+          </div>
+        )}
+        {ready && !loading && (
+          <div className="ml-auto flex items-center gap-1.5 text-xs text-emerald-500/80">
+            <Sparkles className="w-3.5 h-3.5" />
+            Ready
+          </div>
+        )}
       </header>
 
-      <div className="flex-1 overflow-hidden">
-        <div className="h-full grid grid-cols-4 gap-6 p-6">
-          <div className="col-span-1 space-y-6 overflow-auto">
-            <div className="max-h-[75vh] overflow-scroll">
-              <StepsList
-                steps={steps}
-                currentStep={currentStep}
-                onStepClick={setCurrentStep}
-              />
-            </div>
-            <div className="flex flex-col gap-2">
-              {error && (
-                <p className="text-sm text-red-400">{error}</p>
-              )}
-              {!showChat && !error ? (
-                <Loader />
-              ) : showChat ? (
-                <>
-                  <textarea
-                    value={userPrompt}
-                    onChange={(e) => setUserPrompt(e.target.value)}
-                    className="p-2 w-full"
-                  />
-                  <button
-                    onClick={handleSend}
-                    className="bg-purple-400 px-4"
-                  >
-                    Send
-                  </button>
-                </>
-              ) : null}
-            </div>
+      <div className="flex-1 grid grid-cols-12 gap-3 p-3 min-h-0">
+        {/* Left sidebar — steps + chat */}
+        <aside className="col-span-3 flex flex-col gap-3 min-h-0 overflow-hidden">
+          <div className="flex-1 min-h-0">
+            <StepsList
+              steps={steps}
+              currentStep={currentStep}
+              onStepClick={setCurrentStep}
+            />
           </div>
 
-          <div className="col-span-1">
-            <FileExplorer files={files} onFileSelect={setSelectedFile} />
+          <div className="shrink-0 rounded-xl border border-zinc-800 bg-zinc-900/60 p-3">
+            {error && (
+              <p className="text-sm text-red-400 mb-3 leading-relaxed">
+                {error}
+              </p>
+            )}
+            {isInitialLoad && !error && (
+              <Loader label="Building your project…" />
+            )}
+            {showChat && (
+              <div className="space-y-2">
+                <textarea
+                  value={userPrompt}
+                  onChange={(e) => setUserPrompt(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      handleSend();
+                    }
+                  }}
+                  placeholder="Ask for changes…"
+                  rows={3}
+                  className="w-full p-3 text-sm bg-zinc-950/50 text-zinc-100 border border-zinc-800 rounded-lg focus:ring-2 focus:ring-violet-500/40 focus:border-violet-500/40 resize-none placeholder-zinc-600 outline-none transition-all"
+                />
+                <button
+                  onClick={handleSend}
+                  disabled={!userPrompt.trim() || loading}
+                  className="w-full flex items-center justify-center gap-2 bg-violet-600 text-white py-2.5 px-4 rounded-lg text-sm font-medium hover:bg-violet-500 disabled:opacity-40 disabled:cursor-not-allowed transition-all active:scale-[0.98]"
+                >
+                  {loading ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Send className="w-4 h-4" />
+                  )}
+                  Send
+                </button>
+              </div>
+            )}
           </div>
+        </aside>
 
-          <div className={`col-span-2 ${panelClass} h-[calc(100vh-8rem)]`}>
-            <div className="flex space-x-2 mb-4">
+        {/* File explorer */}
+        <div className="col-span-2 min-h-0">
+          <FileExplorer
+            files={files}
+            selectedPath={selectedFile?.path}
+            onFileSelect={setSelectedFile}
+          />
+        </div>
+
+        {/* Main panel — code / preview */}
+        <main className="col-span-7 flex flex-col min-h-0 rounded-xl border border-zinc-800 bg-zinc-900/40 overflow-hidden">
+          <div className="shrink-0 flex items-center justify-between px-4 py-2 border-b border-zinc-800 bg-zinc-900/60">
+            <div className="inline-flex p-0.5 rounded-lg bg-zinc-950 border border-zinc-800">
               {(
                 [
                   ["code", Code2, "Code"],
@@ -146,26 +216,67 @@ export function BuilderPage() {
                 <button
                   key={id}
                   onClick={() => setTab(id)}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-md transition-colors ${tab === id
-                      ? "bg-gray-700 text-gray-100"
-                      : "text-gray-400 hover:text-gray-200 hover:bg-gray-800"
-                    }`}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm transition-all ${
+                    tab === id
+                      ? "bg-zinc-800 text-zinc-100 shadow-sm"
+                      : "text-zinc-500 hover:text-zinc-300"
+                  }`}
                 >
-                  <Icon className="w-4 h-4" />
+                  <Icon className="w-3.5 h-3.5" />
                   {label}
+                  {id === "preview" && previewLoading && (
+                    <Loader2 className="w-3 h-3 animate-spin text-violet-400" />
+                  )}
                 </button>
               ))}
             </div>
-            <div className="h-[calc(100%-4rem)]">
-              {tab === "preview" && previewUrl && (
+            {tab === "preview" && previewUrl && (
+              <a
+                href={previewUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs text-zinc-500 hover:text-violet-400 transition-colors"
+              >
+                Open in new tab ↗
+              </a>
+            )}
+          </div>
+
+          <div className="flex-1 min-h-0 p-3">
+            {tab === "code" && <CodeEditor file={selectedFile} />}
+            {tab === "preview" && previewUrl && (
+              <div className="h-full rounded-lg border border-zinc-800 overflow-hidden bg-zinc-950">
                 <iframe
                   src={previewUrl}
                   className="w-full h-full border-0"
+                  title="Preview"
+                  style={{ colorScheme: "dark" }}
                 />
-              )}
-            </div>
+              </div>
+            )}
+            {tab === "preview" && !previewUrl && (
+              <div className="h-full flex flex-col items-center justify-center gap-4 text-zinc-500">
+                {previewLoading ? (
+                  <>
+                    <Loader label="Starting dev server…" />
+                    <p className="text-xs text-zinc-600 max-w-xs text-center">
+                      Running npm install and starting Vite. This may take a
+                      minute.
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <Eye className="w-10 h-10 opacity-30" />
+                    <p className="text-sm">
+                      {previewError ??
+                        "Preview will appear once the dev server is ready"}
+                    </p>
+                  </>
+                )}
+              </div>
+            )}
           </div>
-        </div>
+        </main>
       </div>
     </div>
   );

@@ -1,8 +1,14 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #09090b;
+  --foreground: #fafafa;
+  --surface: #18181b;
+  --surface-raised: #27272a;
+  --border: #3f3f46;
+  --accent: #8b5cf6;
+  --accent-hover: #7c3aed;
+  --muted: #a1a1aa;
 }
 
 @theme inline {
@@ -12,15 +18,108 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+}
+
+/* ── Global scrollbars (fallback) ── */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #3f3f46 transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: #3f3f46;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  background-clip: padding-box;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: #52525b;
+  background-clip: padding-box;
+}
+
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* ── Panel scrollbars — subtle until hovered ── */
+.scrollbar-panel {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+  scrollbar-gutter: stable;
+}
+
+.scrollbar-panel:hover {
+  scrollbar-color: #52525b transparent;
+}
+
+.scrollbar-panel::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+.scrollbar-panel::-webkit-scrollbar-track {
+  background: transparent;
+  margin: 4px 0;
+}
+
+.scrollbar-panel::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 999px;
+}
+
+.scrollbar-panel:hover::-webkit-scrollbar-thumb {
+  background: #52525b;
+}
+
+.scrollbar-panel::-webkit-scrollbar-thumb:active {
+  background: #71717a;
+}
+
+/* Hide scrollbar on panels until scroll/hover (optional overlay feel) */
+.scrollbar-panel.scrollbar-auto-hide {
+  scrollbar-color: transparent transparent;
+}
+
+.scrollbar-panel.scrollbar-auto-hide:is(:hover, :focus-within) {
+  scrollbar-color: #52525b transparent;
+}
+
+.scrollbar-panel.scrollbar-auto-hide::-webkit-scrollbar-thumb {
+  background: transparent;
+}
+
+.scrollbar-panel.scrollbar-auto-hide:is(:hover, :focus-within)::-webkit-scrollbar-thumb {
+  background: #52525b;
+}
+
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.35s ease-out;
+}
+
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(139, 92, 246, 0.3); }
+  50% { box-shadow: 0 0 20px 4px rgba(139, 92, 246, 0.15); }
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 2s ease-in-out infinite;
 }
